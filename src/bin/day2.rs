@@ -68,6 +68,7 @@ fn part2(input: &str) -> usize {
     safe
 }
 
+#[allow(dead_code)]
 fn part1(input: &str, max_tolerance: usize) -> usize {
     let levelss = input.lines().map(|p| {
         p.split_whitespace()

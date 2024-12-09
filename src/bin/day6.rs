@@ -58,6 +58,7 @@ impl State {
         }
     }
 
+    #[allow(clippy::type_complexity)]
     fn walk(
         &self,
         wall: Option<(usize, usize)>,
@@ -123,6 +124,7 @@ impl State {
     }
 }
 
+#[allow(dead_code)]
 fn solve1(input: &str) -> usize {
     let state = State::from_input(input);
     let (result, _) = state.walk(None);

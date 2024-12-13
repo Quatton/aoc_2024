@@ -283,12 +283,12 @@ impl Input {
 }
 
 fn main() {
-    let input = "AAAAAA
-AAABBA
-AAABBA
-ABBAAA
-ABBAAA
-AAAAAA";
+    //     let input = "AAAAAA
+    // AAABBA
+    // AAABBA
+    // ABBAAA
+    // ABBAAA
+    // AAAAAA";
     let input = &read_input_v1(12);
 
     let p = Input::parse(input);
@@ -298,7 +298,6 @@ AAAAAA";
     let cost = regions.iter().fold(0, |acc, region| {
         let area = p.calc_area(region);
         let peri = p.calc_sides(region);
-        println!("area: {}, peri: {}", area, peri);
         acc + area * peri
     });
 

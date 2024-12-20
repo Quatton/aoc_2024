@@ -1,9 +1,12 @@
+use std::collections::{HashMap, HashSet};
+
 use aoc_2024::read_input_v1;
 
 #[derive(Debug)]
 struct Input {
-    rules: Vec<String>,
+    rules: HashSet<String>,
     checklist: Vec<String>,
+    cache: HashMap<String, (usize, usize)>,
 }
 
 impl Input {
@@ -20,18 +23,26 @@ impl Input {
             .map(|l| l.trim().to_string())
             .collect();
 
-        Self { rules, checklist }
+        Self {
+            rules,
+            checklist,
+            cache: HashMap::new(),
+        }
     }
 
-    fn check(&self, input: &str) -> usize {
+    fn check(&mut self, input: &str) -> usize {
         let mut chart = vec![vec![(0_usize, 0_usize); input.len()]; input.len()];
 
         for r in (0..input.len()).rev() {
             for c in 0..=r {
-                if self
-                    .rules
-                    .contains(&input[c..c + input.len() - r].to_string())
-                {
+                let substr = &input[c..c + input.len() - r];
+
+                if let Some(cached) = self.cache.get(substr) {
+                    chart[r][c] = *cached;
+                    continue;
+                }
+
+                if self.rules.contains(substr) {
                     chart[r][c] = (1, 1);
                 }
 
@@ -45,18 +56,22 @@ impl Input {
 
                     chart[r][c].1 += p1 * p2;
                 }
+
+                self.cache.insert(substr.to_string(), chart[r][c]);
             }
         }
 
         chart[0][0].1
     }
 
-    fn check_all(&self) -> usize {
-        self.checklist.iter().filter(|&c| self.check(c) > 0).count()
+    fn check_all(&mut self) -> usize {
+        let list = self.checklist.clone();
+        list.iter().filter(|c| self.check(c) > 0).count()
     }
 
-    fn count_all(&self) -> usize {
-        self.checklist.iter().map(|c| self.check(c)).sum()
+    fn count_all(&mut self) -> usize {
+        let list = self.checklist.clone();
+        list.iter().map(|c| self.check(c)).sum()
     }
 }
 
@@ -73,7 +88,7 @@ brgr
 bbrgwb";
 
     let input = &read_input_v1(19);
-    let p = Input::from_str(input);
+    let mut p = Input::from_str(input);
 
     println!("Part 1: {}", p.check_all());
     // println!("brwrr: {}", p.check("brwrr"));

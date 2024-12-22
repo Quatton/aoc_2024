@@ -1,9 +1,11 @@
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+use std::collections::HashSet;
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Hash)]
 enum Key {
     L,
-    R,
     U,
     D,
+    R,
     A,
 }
 
@@ -140,22 +142,32 @@ fn next_num(num: i32, target: i32) -> Option<Key> {
         },
         1 => match target {
             0 | 2 | 3 | 10 => Key::R,
-            _ => Key::U,
+            4 | 7 => Key::U,
+            _ => Key::R,
         },
         2 => match target {
-            1 | 4 | 7 => Key::L,
-            3 | 6 | 9 => Key::R,
+            1 => Key::L,
+            3 => Key::R,
             0 | 10 => Key::D,
+
+            4 | 7 => Key::L,
+            6 | 9 => Key::R,
+
             _ => Key::U,
         },
         3 => match target {
-            10 => Key::D,
-            4 | 6 | 9 => Key::U,
-            _ => Key::L,
+            0 | 10 => Key::D,
+            1 | 2 => Key::L,
+            7 => Key::L,
+            // 5 | 8 => Key::R,
+
+            // ^A^^<<A>>AvvvA
+            // ^A<<^^A>>AvvvA
+            _ => Key::U,
         },
         4 => match target {
+            5 | 6 => Key::R,
             0..=3 | 10 => Key::D,
-            5 | 6 | 8 | 9 => Key::R,
             _ => Key::U,
         },
         5 => match target {
@@ -232,17 +244,26 @@ fn join_keypad(mut key: Key, target: Key) -> String {
 }
 
 fn join_num(mut num: i32, target: i32) -> String {
-    let mut keys = String::new();
+    let mut keys = vec![];
 
     while num != target {
         if let Some(pressed) = next_num(num, target) {
-            keys.push(pressed.to_char());
+            keys.push(pressed);
             // println!("pressed: {:?}, num: {}", pressed, num);
             num = press_num(num, pressed);
         }
     }
 
-    keys
+    // ^A^^<<A>>AvvvA
+    // ^A<<^^A>>AvvvA
+
+    // <A>A<AAv<AA>>^AvAA^A<vAAA>^A
+    // <A>Av<<AA>^AA>AvAA^A<vAAA>^A
+
+    // id: ^^<< A>A>AvvA
+    // fake: <<^^A>A>AvvA
+
+    keys.iter().map(Key::to_char).collect()
 }
 
 fn join_num_str(input: &str) -> String {
@@ -254,6 +275,8 @@ fn join_num_str(input: &str) -> String {
         out.push_str("A");
         cur = target;
     }
+
+    // println!("out_num: {}", out);
 
     out
 }
@@ -276,7 +299,7 @@ fn calc_complexity(input: &str) -> usize {
     let inp: usize = input.trim_end_matches('A').parse().unwrap();
     let res = join_keypad_str(&join_keypad_str(&join_num_str(input)));
 
-    println!("input: {}, res: {}", inp, res.len());
+    // println!("input: {}, res: {}", inp, res.len());
     inp * res.len()
 }
 
@@ -296,12 +319,15 @@ fn simulate_keypad(input: &str) -> String {
 }
 
 fn main() {
-    let input = "029A
-980A
-179A
-456A
-379A";
+    let input = "169A
+279A
+540A
+869A
+789A";
     println!("{}", input.lines().map(calc_complexity).sum::<usize>());
+
+    // ideal: <A>A v<<A A >^A A >A   vAA^A<vAAA>^A
+    // ours:  <A>A <A   A v<A A >>^A vAA^A<vAAA>^A
 }
 
 #[cfg(test)]

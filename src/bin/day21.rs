@@ -1,321 +1,387 @@
-use std::collections::HashSet;
+use std::{
+    collections::{HashMap, HashSet, VecDeque},
+    iter::repeat_n,
+};
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Hash)]
-enum Key {
-    L,
-    U,
-    D,
-    R,
-    A,
-}
+use itertools::Itertools;
 
-impl Key {
-    fn to_char(&self) -> char {
-        match self {
-            Key::L => '<',
-            Key::R => '>',
-            Key::U => '^',
-            Key::D => 'v',
-            Key::A => 'A',
+static NUMPAD_V: [[char; 3]; 4] = [
+    ['7', '8', '9'],
+    ['4', '5', '6'],
+    ['1', '2', '3'],
+    ['X', '0', 'A'],
+];
+
+static DPAD_V: [[char; 3]; 2] = [['X', '^', 'A'], ['<', 'v', '>']];
+
+fn simulate_dpad(input: &str, from: char) -> char {
+    let mut pos = DPAD_V
+        .iter()
+        .enumerate()
+        .find_map(|(r, row)| {
+            row.iter().enumerate().find_map(|(c, &n)| {
+                if n == from {
+                    Some((r as i32, c as i32))
+                } else {
+                    None
+                }
+            })
+        })
+        .unwrap();
+
+    for ch in input.chars() {
+        let (r, c) = pos;
+        let (nr, nc) = match ch {
+            '^' => (r - 1, c),
+            'v' => (r + 1, c),
+            '<' => (r, c - 1),
+            '>' => (r, c + 1),
+            'A' => (r, c),
+            c => unreachable!("invalid char: {}", c),
+        };
+
+        if (0..2).contains(&nr) && (0..3).contains(&nc) && DPAD_V[nr as usize][nc as usize] != 'X' {
+            pos = (nr, nc);
         }
     }
 
-    fn from_char(c: char) -> Self {
-        match c {
-            '<' => Key::L,
-            '>' => Key::R,
-            '^' => Key::U,
-            'v' => Key::D,
-            'A' => Key::A,
-            _ => panic!("invalid char"),
+    DPAD_V[pos.0 as usize][pos.1 as usize]
+}
+
+fn build_dpad_map() -> HashMap<(char, char), HashSet<String>> {
+    let mut res: HashMap<(char, char), HashSet<String>> = HashMap::new();
+
+    let list = ['^', 'v', '<', '>', 'A'];
+    for l in list.iter().copied().combinations_with_replacement(2) {
+        let (from, to) = (l[0], l[1]);
+        if from == to {
+            res.insert((from, to), HashSet::from([String::new()]));
+            continue;
         }
-    }
-}
 
-fn press_key(key: Key, pressed: Key) -> Key {
-    match pressed {
-        Key::A => key,
-        Key::D => match key {
-            Key::U => Key::D,
-            Key::A => Key::R,
-            _ => key,
-        },
-        Key::L => match key {
-            Key::R => Key::D,
-            Key::A => Key::U,
-            Key::D => Key::L,
-            _ => key,
-        },
-        Key::R => match key {
-            Key::L => Key::D,
-            Key::D => Key::R,
-            Key::U => Key::A,
-            _ => key,
-        },
-        Key::U => match key {
-            Key::R => Key::A,
-            Key::D => Key::U,
-            _ => key,
-        },
-    }
-}
+        let fromn = DPAD_V
+            .iter()
+            .enumerate()
+            .find_map(|(r, row)| {
+                row.iter().enumerate().find_map(|(c, &n)| {
+                    if n == from {
+                        Some((r as i32, c as i32))
+                    } else {
+                        None
+                    }
+                })
+            })
+            .unwrap();
 
-fn press_num(num: i32, pressed: Key) -> i32 {
-    match num {
-        0 => match pressed {
-            Key::U => 2,
-            Key::R => 10,
-            _ => 0,
-        },
-        1 => match pressed {
-            Key::U => 4,
-            Key::R => 2,
-            _ => 1,
-        },
-        2 => match pressed {
-            Key::U => 5,
-            Key::R => 3,
-            Key::L => 1,
-            Key::D => 0,
-            _ => 2,
-        },
-        3 => match pressed {
-            Key::U => 6,
-            Key::L => 2,
-            Key::D => 10,
-            _ => 3,
-        },
-        4 => match pressed {
-            Key::R => 5,
-            Key::D => 1,
-            Key::U => 7,
-            _ => 4,
-        },
-        5 => match pressed {
-            Key::U => 8,
-            Key::R => 6,
-            Key::L => 4,
-            Key::D => 2,
-            _ => 5,
-        },
-        6 => match pressed {
-            Key::U => 9,
-            Key::L => 5,
-            Key::D => 3,
-            _ => 6,
-        },
-        7 => match pressed {
-            Key::R => 8,
-            Key::D => 4,
-            _ => 7,
-        },
-        8 => match pressed {
-            Key::R => 9,
-            Key::L => 7,
-            Key::D => 5,
-            _ => 8,
-        },
-        9 => match pressed {
-            Key::L => 8,
-            Key::D => 6,
-            _ => 9,
-        },
-        10 => match pressed {
-            Key::L => 0,
-            Key::U => 3,
-            _ => 10,
-        },
-        _ => panic!("invalid num"),
-    }
-}
+        let ton = DPAD_V
+            .iter()
+            .enumerate()
+            .find_map(|(r, row)| {
+                row.iter().enumerate().find_map(|(c, &n)| {
+                    if n == to {
+                        Some((r as i32, c as i32))
+                    } else {
+                        None
+                    }
+                })
+            })
+            .unwrap();
 
-fn next_num(num: i32, target: i32) -> Option<Key> {
-    if num == target {
-        return None;
+        let diff_x = ton.1 - fromn.1;
+        let diff_y = ton.0 - fromn.0;
+
+        let h = repeat_n(
+            if diff_x > 0 { '>' } else { '<' },
+            diff_x.unsigned_abs() as usize,
+        )
+        .join("");
+
+        let v = repeat_n(
+            if diff_y > 0 { 'v' } else { '^' },
+            diff_y.unsigned_abs() as usize,
+        )
+        .join("");
+
+        // let moves = h
+        //     .chain(v)
+        //     .permutations(diff_x.unsigned_abs() as usize + diff_y.unsigned_abs() as usize)
+
+        let moves = [h, v]
+            .into_iter()
+            .permutations(2)
+            .filter_map(|m| {
+                let m = m.into_iter().collect::<String>();
+                if simulate_dpad(&m, from) == to {
+                    Some(m)
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        res.insert((from, to), moves);
+
+        res.insert(
+            (to, from),
+            res[&(from, to)].iter().map(|c| rev_path(c)).collect(),
+        );
     }
 
-    Some(match num {
-        0 => match target {
-            2 => Key::U,
-            10 => Key::R,
-            _ => Key::U,
-        },
-        1 => match target {
-            0 | 2 | 3 | 10 => Key::R,
-            4 | 7 => Key::U,
-            _ => Key::R,
-        },
-        2 => match target {
-            1 => Key::L,
-            3 => Key::R,
-            0 | 10 => Key::D,
-
-            4 | 7 => Key::L,
-            6 | 9 => Key::R,
-
-            _ => Key::U,
-        },
-        3 => match target {
-            0 | 10 => Key::D,
-            1 | 2 => Key::L,
-            7 => Key::L,
-            // 5 | 8 => Key::R,
-
-            // ^A^^<<A>>AvvvA
-            // ^A<<^^A>>AvvvA
-            _ => Key::U,
-        },
-        4 => match target {
-            5 | 6 => Key::R,
-            0..=3 | 10 => Key::D,
-            _ => Key::U,
-        },
-        5 => match target {
-            0..=3 | 10 => Key::D,
-            4 => Key::L,
-            6 => Key::R,
-            _ => Key::U,
-        },
-        6 => match target {
-            0..=3 | 10 => Key::D,
-            4 | 5 => Key::L,
-            _ => Key::U,
-        },
-        7 => match target {
-            8 | 9 => Key::R,
-            _ => Key::D,
-        },
-        8 => match target {
-            7 => Key::L,
-            9 => Key::R,
-            _ => Key::D,
-        },
-        9 => match target {
-            7 | 8 => Key::L,
-            _ => Key::D,
-        },
-        10 => match target {
-            0 => Key::L,
-            _ => Key::U,
-        },
-        _ => panic!("invalid num"),
-    })
+    res
 }
 
-fn next_keypad(key: Key, target: Key) -> Option<Key> {
-    if key == target {
-        return None;
+fn rev_path(path: &str) -> String {
+    path.chars()
+        .rev()
+        .map(|c| match c {
+            '>' => '<',
+            '<' => '>',
+            '^' => 'v',
+            'v' => '^',
+            'A' => 'A',
+            _ => unreachable!(),
+        })
+        .collect::<String>()
+}
+
+fn build_numpad_map() -> HashMap<(char, char), HashSet<String>> {
+    let mut res: HashMap<(char, char), HashSet<String>> = HashMap::new();
+
+    for l in "0123456789A".chars().combinations_with_replacement(2) {
+        let (fc, tc) = (l[0], l[1]);
+
+        if fc == tc {
+            res.insert((fc, tc), HashSet::from([String::new()]));
+            continue;
+        }
+
+        let f = NUMPAD_V
+            .iter()
+            .enumerate()
+            .find_map(|(r, row)| {
+                row.iter().enumerate().find_map(|(c, &n)| {
+                    if n == fc {
+                        Some((r as i32, c as i32))
+                    } else {
+                        None
+                    }
+                })
+            })
+            .unwrap();
+
+        let t = NUMPAD_V
+            .iter()
+            .enumerate()
+            .find_map(|(r, row)| {
+                row.iter().enumerate().find_map(|(c, &n)| {
+                    if n == tc {
+                        Some((r as i32, c as i32))
+                    } else {
+                        None
+                    }
+                })
+            })
+            .unwrap();
+
+        let diff_x = t.1 - f.1;
+        let diff_y = t.0 - f.0;
+
+        let h = repeat_n(
+            if diff_x > 0 { '>' } else { '<' },
+            diff_x.unsigned_abs() as usize,
+        )
+        .join("");
+
+        let v = repeat_n(
+            if diff_y > 0 { 'v' } else { '^' },
+            diff_y.unsigned_abs() as usize,
+        )
+        .join("");
+
+        let moves = [h, v]
+            .into_iter()
+            .permutations(2)
+            .filter_map(|m| {
+                let m = m.into_iter().collect::<String>();
+                if simulate_numpad(&m, fc) == tc {
+                    Some(m)
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        res.insert((fc, tc), moves);
+
+        res.insert(
+            (tc, fc),
+            res[&(fc, tc)].iter().map(|c| rev_path(c)).collect(),
+        );
     }
 
-    Some(match key {
-        Key::L => Key::R,
-        Key::D => match target {
-            Key::A => Key::R,
-            _ => target,
-        },
-        Key::U => match target {
-            Key::A => Key::R,
-            _ => Key::D,
-        },
-        Key::R => match target {
-            Key::A => Key::U,
-            _ => Key::L,
-        },
-        Key::A => match target {
-            Key::U | Key::D => Key::L,
-            _ => Key::D,
-        },
-    })
+    res
 }
 
-fn join_keypad(mut key: Key, target: Key) -> String {
-    let mut keys = String::new();
+fn simulate_numpad(input: &str, from: char) -> char {
+    let mut pos = NUMPAD_V
+        .iter()
+        .enumerate()
+        .find_map(|(r, row)| {
+            row.iter().enumerate().find_map(|(c, &n)| {
+                if n == from {
+                    Some((r as i32, c as i32))
+                } else {
+                    None
+                }
+            })
+        })
+        .unwrap();
 
-    // println!("key: {:?}, target: {:?}", key, target);
-    while key != target {
-        if let Some(pressed) = next_keypad(key, target) {
-            keys.push(pressed.to_char());
-            key = press_key(key, pressed);
-            // println!("prrssed: {:?}, key: {:?}", pressed, key);
+    for ch in input.chars() {
+        let (r, c) = pos;
+        let (nr, nc) = match ch {
+            '^' => (r - 1, c),
+            'v' => (r + 1, c),
+            '<' => (r, c - 1),
+            '>' => (r, c + 1),
+            'A' => (r, c),
+            _ => unreachable!(),
+        };
+
+        if (0..4).contains(&nr) && (0..3).contains(&nc) && NUMPAD_V[nr as usize][nc as usize] != 'X'
+        {
+            pos = (nr, nc);
         }
     }
 
-    keys
+    NUMPAD_V[pos.0 as usize][pos.1 as usize]
 }
 
-fn join_num(mut num: i32, target: i32) -> String {
-    let mut keys = vec![];
+struct Map {
+    numpad_map: HashMap<(char, char), HashSet<String>>,
+    dpad_map: HashMap<(char, char), HashSet<String>>,
+}
 
-    while num != target {
-        if let Some(pressed) = next_num(num, target) {
-            keys.push(pressed);
-            // println!("pressed: {:?}, num: {}", pressed, num);
-            num = press_num(num, pressed);
+impl Map {
+    fn new() -> Self {
+        Self {
+            numpad_map: build_numpad_map(),
+            dpad_map: build_dpad_map(),
         }
     }
 
-    // ^A^^<<A>>AvvvA
-    // ^A<<^^A>>AvvvA
+    fn join_numpad_moves(&self, input: &str) -> Vec<HashSet<String>> {
+        let mut res = vec![];
+        let mut last = 'A';
 
-    // <A>A<AAv<AA>>^AvAA^A<vAAA>^A
-    // <A>Av<<AA>^AA>AvAA^A<vAAA>^A
-
-    // id: ^^<< A>A>AvvA
-    // fake: <<^^A>A>AvvA
-
-    keys.iter().map(Key::to_char).collect()
-}
-
-fn join_num_str(input: &str) -> String {
-    let mut out = String::new();
-    let mut cur = 10;
-
-    for target in input.chars().map(|c| c.to_digit(11).unwrap() as i32) {
-        out.push_str(&join_num(cur, target));
-        out.push_str("A");
-        cur = target;
-    }
-
-    // println!("out_num: {}", out);
-
-    out
-}
-
-fn join_keypad_str(input: &str) -> String {
-    let mut out = String::new();
-    let mut cur = Key::A;
-
-    for target in input.chars().map(Key::from_char) {
-        out.push_str(&join_keypad(cur, target));
-        out.push_str("A");
-        cur = target;
-    }
-
-    // println!("out: {}", out);
-    out
-}
-
-fn calc_complexity(input: &str) -> usize {
-    let inp: usize = input.trim_end_matches('A').parse().unwrap();
-    let res = join_keypad_str(&join_keypad_str(&join_num_str(input)));
-
-    // println!("input: {}, res: {}", inp, res.len());
-    inp * res.len()
-}
-
-fn simulate_keypad(input: &str) -> String {
-    let mut out = String::new();
-    let mut cur = Key::A;
-
-    for pressed in input.chars().map(Key::from_char) {
-        let next = press_key(cur, pressed);
-        if pressed == Key::A {
-            out.push(cur.to_char());
+        for ch in input.chars() {
+            let moves = self.numpad_map.get(&(last, ch)).unwrap();
+            res.push(moves.iter().map(|m| format!("{}A", m)).collect());
+            last = ch;
         }
-        cur = next;
+
+        res
     }
 
-    out
+    fn join_dpad_moves(&self, input: &str) -> Vec<HashSet<String>> {
+        let mut res = vec![];
+        let mut last = 'A';
+
+        for ch in input.chars() {
+            let moves = self
+                .dpad_map
+                .get(&(last, ch))
+                .unwrap_or_else(|| panic!("{} -> {}", last, ch));
+            res.push(moves.iter().map(|m| format!("{}A", m)).collect());
+            last = ch;
+        }
+
+        res
+    }
+
+    fn all_numpad_moves(&self, input: &str) -> HashSet<String> {
+        self.join_numpad_moves(input)
+            .iter()
+            .fold(HashSet::from(["".to_string()]), |acc, m| {
+                let mut res = HashSet::new();
+                for a in acc.iter() {
+                    for b in m.iter() {
+                        res.insert(format!("{}{}", a, b));
+                    }
+                }
+                res
+            })
+    }
+
+    fn all_dpad_moves(&self, input: &str) -> HashSet<String> {
+        self.join_dpad_moves(input)
+            .iter()
+            .fold(HashSet::from(["".to_string()]), |acc, m| {
+                let mut res = HashSet::new();
+                for a in acc.iter() {
+                    for b in m.iter() {
+                        res.insert(format!("{}{}", a, b));
+                    }
+                }
+                res
+            })
+    }
+
+    fn solve(&self, input: &str) -> usize {
+        let numpad_moves = self.all_numpad_moves(input);
+        let dpad_moves = numpad_moves.iter().fold(HashSet::new(), |mut acc, m| {
+            acc.extend(self.all_dpad_moves(m));
+            acc
+        });
+        let dpad_dpad_moves = dpad_moves.iter().fold(HashSet::new(), |mut acc, m| {
+            acc.extend(self.all_dpad_moves(m));
+            acc
+        });
+
+        dpad_dpad_moves.into_iter().map(|m| m.len()).min().unwrap()
+    }
+
+    fn calculate_complexity(&self, input: &str, depth: usize) -> usize {
+        let input_num = input.trim_end_matches('A').parse::<usize>().unwrap();
+        let dpads = self.all_numpad_moves(input);
+        let mut cache = HashMap::new();
+
+        let complexity = dpads
+            .iter()
+            .map(|input| self.solve_depth(input.to_string(), &mut cache, depth))
+            .min()
+            .unwrap();
+
+        complexity * input_num
+    }
+
+    fn solve_depth(
+        &self,
+        num: String,
+        cache: &mut HashMap<(String, usize), usize>,
+        count: usize,
+    ) -> usize {
+        if count == 0 {
+            return num.len();
+        }
+
+        let len = match cache.get(&(num.clone(), count)) {
+            Some(str) => *str,
+            None => self
+                .join_dpad_moves(&num)
+                .iter()
+                .map(|m| {
+                    m.iter()
+                        .map(|m| self.solve_depth(m.to_string(), cache, count - 1))
+                        .min()
+                        .unwrap_or(0)
+                })
+                .sum::<usize>(),
+        };
+
+        cache.insert((num, count), len);
+        len
+    }
 }
 
 fn main() {
@@ -324,10 +390,16 @@ fn main() {
 540A
 869A
 789A";
-    println!("{}", input.lines().map(calc_complexity).sum::<usize>());
 
-    // ideal: <A>A v<<A A >^A A >A   vAA^A<vAAA>^A
-    // ours:  <A>A <A   A v<A A >>^A vAA^A<vAAA>^A
+    let map = Map::new();
+
+    let res = input
+        .trim()
+        .lines()
+        .map(|l| map.calculate_complexity(l, 25))
+        .sum::<usize>();
+
+    println!("{}", res);
 }
 
 #[cfg(test)]
@@ -335,15 +407,70 @@ mod test {
     use super::*;
 
     #[test]
-    fn example_1() {
-        assert_eq!(
-            "v<<A>>^A<A>AvA<^AA>A<vAAA>^A".len(),
-            join_keypad_str("<A^A>^^AvvvA").len()
-        );
+    fn numpad_map_works() {
+        let numpad_map = build_numpad_map();
 
-        assert_eq!(
-            "<vA<AA>>^AvAA<^A>A<v<A>>^AvA^A<vA>^A<v<A>^A>AAvA^A<v<A>A>^AAAvA<^A>A".len(),
-            join_keypad_str(&join_keypad_str("<A^A>^^AvvvA")).len()
-        )
+        for from in 0..=10 {
+            for to in 0..=10 {
+                let from = if from == 10 {
+                    'A'
+                } else {
+                    from.to_string().chars().next().unwrap()
+                };
+
+                let to = if to == 10 {
+                    'A'
+                } else {
+                    to.to_string().chars().next().unwrap()
+                };
+
+                if from == to {
+                    assert_eq!(simulate_numpad("", from), to, "no-op should work");
+                }
+
+                let moves = numpad_map
+                    .get(&(from, to))
+                    .unwrap_or_else(|| panic!("{} -> {}", from, to));
+
+                for m in moves {
+                    assert_eq!(
+                        simulate_numpad(m, from),
+                        to,
+                        "from: {}, to: {}, via: {}",
+                        from,
+                        to,
+                        m
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn dpad_map_works() {
+        let dpad_map = build_dpad_map();
+
+        for from in ['^', 'v', '<', '>'] {
+            for to in ['^', 'v', '<', '>'] {
+                if from == to {
+                    assert_eq!(simulate_dpad("", from), to, "no-op should work");
+                }
+
+                let moves = dpad_map
+                    .get(&(from, to))
+                    .unwrap_or_else(|| panic!("{} -> {}", from, to));
+
+                for m in moves {
+                    assert_eq!(
+                        simulate_dpad(m, from),
+                        to,
+                        "from: {}, to: {}, via: {}",
+                        from,
+                        to,
+                        m
+                    );
+                }
+            }
+        }
     }
 }
